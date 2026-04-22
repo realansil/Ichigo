@@ -5,8 +5,9 @@ An interactive, browser-based visual experience inspired by *BLEACH*, featuring 
 Built using **Three.js**, **MediaPipe Hands**, and pure frontend technologies.
 
 ## 🚀 Live Demo
-https://realansil.github.io/Ichigo/
-https://realansil.github.io/Ichigo/index2.html
+https://realansil.github.io/Ichigo/<br>
+https://realansil.github.io/Ichigo/index2.html<br>
+https://realansil.github.io/Ichigo/index3.html
 
 ---
 
