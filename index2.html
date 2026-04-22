@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLEACH — 死神 REIATSU SYSTEM v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #020305;
+    --bone: #e8e0d0;
+    --ash: #8a8478;
+    --hollow-orange: #ff6a00;
+    --reiatsu-cyan: #00d4ff;
+    --reiatsu-teal: #00ffcc;
+    --quincy-blue: #4488ff;
+    --blood: #cc0022;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    overflow: hidden;
+    background: var(--ink);
+    font-family: 'Share Tech Mono', monospace;
+    cursor: crosshair;
+  }
+
+  #camera-video {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    object-fit: cover;
+    transform: scaleX(-1);
+    z-index: 1;
+    filter: saturate(0.25) contrast(1.3) brightness(0.65);
+    transition: filter 0.6s ease;
+  }
+  #camera-video.hollow  { filter: saturate(0.3) contrast(1.4) brightness(0.6) sepia(0.3) hue-rotate(-15deg); }
+  #camera-video.bankai  { filter: saturate(0) contrast(1.6) brightness(0.5); }
+  #camera-video.quincy  { filter: saturate(0.15) contrast(1.3) brightness(0.7) hue-rotate(200deg); }
+  #camera-video.mugetsu { filter: saturate(0) contrast(2.0) brightness(0.2); }
+
+  #three-canvas, #fx-canvas, #ink-canvas, #debug-canvas {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    pointer-events: none;
+  }
+  #three-canvas { z-index: 3; mix-blend-mode: screen; }
+  #fx-canvas    { z-index: 5; mix-blend-mode: screen; }
+  #ink-canvas   { z-index: 4; mix-blend-mode: multiply; opacity: 0.65; }
+  #debug-canvas { z-index: 6; transform: scaleX(-1); opacity: 0.55; }
+
+  #scanlines {
+    position: fixed; inset: 0; z-index: 7; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.055) 2px, rgba(0,0,0,0.055) 4px);
+  }
+  #vignette {
+    position: fixed; inset: 0; z-index: 7; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 50%, transparent 42%, rgba(0,0,0,0.82) 100%);
+  }
+  #chromatic-canvas {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none;
+    opacity: 0; transition: opacity 0.3s;
+    mix-blend-mode: screen;
+  }
+
+  #ui {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none;
+  }
+
+  #kanji-stamp {
+    position: absolute; top: 22px; left: 50%;
+    transform: translateX(-50%); text-align: center;
+  }
+  #kanji-stamp h1 {
+    font-family: 'Noto Serif JP', serif; font-weight: 900;
+    font-size: clamp(2rem, 5.5vw, 4.2rem);
+    color: var(--bone); letter-spacing: 0.32em; line-height: 1;
+    text-shadow: 0 0 40px rgba(0,212,255,0.25), 2px 2px 0 rgba(0,0,0,0.9);
+  }
+  #kanji-stamp .sub {
+    font-size: clamp(0.45rem, 1vw, 0.65rem);
+    color: var(--ash); letter-spacing: 0.55em; text-transform: uppercase; margin-top: 5px;
+  }
+
+  #technique-panel {
+    position: absolute; left: 22px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  #technique-jp {
+    font-family: 'Noto Serif JP', serif; font-weight: 700;
+    font-size: clamp(1.3rem, 2.8vw, 2.2rem);
+    color: var(--bone); writing-mode: vertical-rl;
+    letter-spacing: 0.12em; opacity: 0;
+    transition: color 0.35s, text-shadow 0.35s, opacity 0.35s;
+  }
+  #technique-en {
+    font-size: 0.55rem; letter-spacing: 0.3em; color: var(--ash);
+    text-transform: uppercase; writing-mode: vertical-rl;
+    opacity: 0; transition: color 0.35s, opacity 0.35s;
+  }
+
+  #stats-panel {
+    position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .stat-row { display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
+  .stat-label { font-size: 0.48rem; letter-spacing: 0.28em; color: var(--ash); text-transform: uppercase; }
+  .stat-bar-wrap {
+    width: 56px; height: 2px;
+    background: rgba(255,255,255,0.07); border-radius: 1px; overflow: hidden;
+  }
+  .stat-bar-fill {
+    height: 100%; width: 0%; border-radius: 1px;
+    transition: width 0.35s ease, box-shadow 0.35s;
+  }
+
+  #audio-vis {
+    position: absolute; bottom: 48px; left: 50%;
+    transform: translateX(-50%);
+    width: min(360px, 80vw); height: 32px;
+    opacity: 0; transition: opacity 0.5s;
+  }
+  #audio-vis canvas { width: 100%; height: 100%; }
+
+  #bottom-bar {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    text-align: center;
+  }
+  #gesture-hint {
+    font-size: 0.5rem; letter-spacing: 0.28em;
+    color: rgba(138,132,120,0.42); text-transform: uppercase;
+  }
+
+  #zanpakuto-name {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Noto Serif JP', serif; font-weight: 900;
+    font-size: clamp(3rem, 10vw, 7.5rem);
+    color: var(--bone); letter-spacing: 0.2em;
+    text-shadow: 0 0 60px rgba(255,255,255,0.28);
+    opacity: 0; pointer-events: none; text-align: center;
+    transition: opacity 0.25s;
+  }
+
+  #episode-banner {
+    position: absolute; bottom: 56px; left: 0; right: 0;
+    text-align: center; opacity: 0; pointer-events: none;
+    transition: opacity 0.45s;
+  }
+  #episode-banner .ep-line {
+    display: block; font-family: 'Noto Serif JP', serif;
+    font-size: clamp(1.1rem, 3.5vw, 2.6rem); font-weight: 300;
+    color: var(--bone); letter-spacing: 0.42em;
+    text-shadow: 0 0 28px rgba(232,224,208,0.48);
+  }
+  #episode-banner .ep-sub {
+    display: block; font-size: 0.5rem; letter-spacing: 0.5em;
+    color: var(--ash); margin-top: 7px; text-transform: uppercase;
+  }
+
+  #hollow-overlay {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 38%, rgba(255,106,0,0.09) 0%, transparent 62%);
+    opacity: 0; pointer-events: none; transition: opacity 0.5s; mix-blend-mode: overlay;
+  }
+  #mugetsu-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, #000 0%, #04000a 45%, #000 100%);
+    opacity: 0; pointer-events: none; transition: opacity 0.8s;
+  }
+
+  #hud-info {
+    position: absolute; top: 20px; left: 22px;
+    font-size: 0.42rem; letter-spacing: 0.22em; color: rgba(138,132,120,0.35);
+    text-transform: uppercase; line-height: 1.7;
+  }
+
+  #charge-bar-wrap {
+    position: absolute; bottom: 90px; left: 50%;
+    transform: translateX(-50%);
+    width: min(200px, 50vw); height: 2px;
+    background: rgba(255,255,255,0.07); border-radius: 1px;
+    overflow: hidden; opacity: 0; transition: opacity 0.2s;
+  }
+  #charge-bar-fill {
+    height: 100%; width: 0%;
+    background: var(--bone);
+    box-shadow: 0 0 6px var(--bone);
+    transition: background 0.2s;
+  }
+</style>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<video id="camera-video" autoplay playsinline muted></video>
+<canvas id="three-canvas"></canvas>
+<canvas id="chromatic-canvas"></canvas>
+<canvas id="fx-canvas"></canvas>
+<canvas id="ink-canvas"></canvas>
+<canvas id="debug-canvas"></canvas>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="ui">
+  <div id="kanji-stamp">
+    <h1>死神</h1>
+    <div class="sub">BLEACH — SOUL REAPER SYSTEM v2</div>
+  </div>
+
+  <div id="technique-panel">
+    <div id="technique-jp">待機中</div>
+    <div id="technique-en">STANDBY</div>
+  </div>
+
+  <div id="stats-panel">
+    <div class="stat-row">
+      <div class="stat-label">REIATSU</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-reiatsu" style="background:var(--reiatsu-cyan);box-shadow:0 0 4px var(--reiatsu-cyan)"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label">BANKAI</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-bankai" style="background:var(--bone);box-shadow:0 0 4px var(--bone)"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label">HOLLOW</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-hollow" style="background:var(--hollow-orange);box-shadow:0 0 4px var(--hollow-orange)"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label">QUINCY</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-quincy" style="background:var(--quincy-blue);box-shadow:0 0 4px var(--quincy-blue)"></div></div>
+    </div>
+  </div>
+
+  <div id="audio-vis"><canvas id="audio-vis-canvas"></canvas></div>
+
+  <div id="zanpakuto-name">斬月</div>
+  <div id="hollow-overlay"></div>
+  <div id="mugetsu-overlay"></div>
+
+  <div id="episode-banner">
+    <span class="ep-line" id="ep-line-text">斬月</span>
+    <span class="ep-sub"  id="ep-sub-text">ZANPAKUTO AWAKENED</span>
+  </div>
+
+  <div id="hud-info">
+    <div id="hud-fps">FPS: --</div>
+    <div id="hud-tech">TECH: NEUTRAL</div>
+    <div id="hud-hands">HANDS: 0</div>
+  </div>
+
+  <div id="charge-bar-wrap"><div id="charge-bar-fill"></div></div>
+
+  <div id="bottom-bar">
+    <div id="gesture-hint">L-OPEN: 始解 · R-OPEN: 卍解 · BOTH: 滅却師 · FISTS: 虚化 · SNAP: 月牙天衝 · 3-POINT: 無月</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }     from 'three/addons/postprocessing/ShaderPass.js';
+
+// ═══════════════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════════════
+const CFG = {
+  N: 12000,
+  SHIKAI:  { coreRatio:0.15, coreRadius:6,  coreColor:{r:2.5,g:2.0,b:1.5},  coreSize:2.2, arms:4,  spiralSpeed:12, spiralRadius:28, spiralStartRadius:3, spiralDepth:10, armColor:{r:0.9,g:0.85,b:0.7},  armSize:0.9,  rotationSpeed:0.06,  bloom:2.2, shake:0.15 },
+  BANKAI:  { coreRatio:0.10, coreRadius:9,  coreColor:{r:0.05,g:0.05,b:0.05},coreSize:3.0, arms:6,  spiralSpeed:18, spiralRadius:45, spiralStartRadius:4, spiralDepth:15, armColor:{r:0.02,g:0.02,b:0.03},armSize:1.2,  edgeColor:{r:2.0,g:1.8,b:1.4}, rotationSpeed:-0.10, bloom:3.5, shake:0.35 },
+  QUINCY:  { coreRatio:0.30, coreRadius:8,  coreColor:{r:0.3,g:0.6,b:3.0},  coreSize:2.0, ringRadius:20, ringThickness:2, armColor:{r:0.2,g:0.5,b:2.5}, armSize:1.0, crossSize:35, crossThickness:6, rotationSpeed:0.04, bloom:2.8, shake:0.2 },
+  HOLLOW:  { coreRatio:0.20, coreRadius:7,  coreColor:{r:2.5,g:0.4,b:0.0},  coreSize:2.5, arms:5,  spiralSpeed:20, spiralRadius:35, spiralStartRadius:2, spiralDepth:12, armColor:{r:1.2,g:0.3,b:0.0},  armSize:1.1,  rotationSpeed:-0.12, bloom:3.0, shake:0.5  },
+  GETSUGA: { speed:22, duration:90, bloom:5.0, shake:1.2 },
+  MUGETSU: { darkDuration:180, warpDuration:60, warpSpeed:14, bloom:4.0, shake:2.0, warpRange:250 },
+  FUSION:  { orbitSpeed:0.07, orbitStartRadius:18, spiralShrinkRate:0.975, spiralSpeedUp:1.025, collisionRadius:1.5, explosionDuration:50, explosionScatter:70, explosionBloom:7.0, explosionShake:2.0, orbitBloom:4.0, orbitShake:0.4 },
+  BLOOM:   { defaultStrength:1.6, radius:0.5, threshold:0.8 },
+  // FIX #4: Tightened snap threshold; now uses thumb tip (4) vs middle MCP (9) distance — truer "snap" gesture
+  DETECT:  { snapThreshold:0.045, snapCooldown:35, chargeFrames:25, mugetsuFrames:50, minDetect:0.7, minTrack:0.6 },
+  ANIM:    { lerpPos:0.45, lerpMorph:0.09, fadeIn:0.07, fadeOut:0.05, shakeMultiplier:14, neutralRot:0.004 },
+  CAM:     { w:1280, h:720, z:60, fov:70 },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+//  EVENT BUS
+// ═══════════════════════════════════════════════════════════════════════
+const Bus = {
+  _listeners: {},
+  on(ev, fn)  { (this._listeners[ev] = this._listeners[ev]||[]).push(fn); },
+  emit(ev, d) { (this._listeners[ev]||[]).forEach(fn => fn(d)); },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AUDIO ENGINE
+// ═══════════════════════════════════════════════════════════════════════
+let audioCtx, analyser, masterGain, audioBuffers = {};
+let audioReady = false;
+// FIX #14: Track active hum + any pending stop timeouts to avoid leaks
+let reiatsuHum = null;
+let humStopTimeout = null;
+
+async function initAudio() {
+  if (audioReady) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // FIX #8: Route everything through analyser → masterGain → destination
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 1.0;
+    analyser.connect(masterGain);
+    masterGain.connect(audioCtx.destination);
+    audioReady = true;
+    buildSounds();
+  } catch(e) { console.warn('Audio init failed:', e); }
+}
+
+function buildSounds() {
+  if (!audioCtx) return;
+  const makeBuffer = (dur, rate=44100) => audioCtx.createBuffer(1, Math.max(1, Math.floor(dur*rate)), rate);
+
+  function synthTone(freq, dur, type='sine', gain=0.4, attack=0.02, release=0.3) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    for (let i=0; i<data.length; i++) {
+      const t = i/sr;
+      let env = 1;
+      if (t < attack) env = t/attack;
+      else if (t > dur-release) env = Math.max(0, (dur-t)/release);
+      let sample = Math.sin(2*Math.PI*freq*t);
+      if (type==='sawtooth') sample = 2*(t*freq - Math.floor(t*freq+0.5));
+      if (type==='square')   sample = Math.sign(Math.sin(2*Math.PI*freq*t));
+      data[i] = sample * env * gain;
+    }
+    return buf;
+  }
+
+  function synthNoise(dur, gain=0.15, attack=0.01, release=0.2) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    for (let i=0; i<data.length; i++) {
+      const t = i/buf.sampleRate;
+      let env = 1;
+      if (t < attack) env = t/attack;
+      else if (t > dur-release) env = Math.max(0, (dur-t)/release);
+      data[i] = (Math.random()*2-1) * env * gain;
+    }
+    return buf;
+  }
+
+  function synthChime(freqs, dur, gain=0.3) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    for (let i=0; i<data.length; i++) {
+      const t = i/sr;
+      const env = Math.exp(-t * 3.5);
+      let sample = 0;
+      for (const f of freqs) sample += Math.sin(2*Math.PI*f*t);
+      data[i] = (sample/freqs.length) * env * gain;
+    }
+    return buf;
+  }
+
+  function synthImpact(dur=0.5, gain=0.5) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    for (let i=0; i<data.length; i++) {
+      const t = i/sr;
+      const env = Math.exp(-t*10);
+      const noise = (Math.random()*2-1)*0.6;
+      const sub = Math.sin(2*Math.PI*55*t) * Math.exp(-t*20);
+      data[i] = (noise + sub) * env * gain;
+    }
+    return buf;
+  }
+
+  audioBuffers = {
+    shikai:  synthChime([523, 659, 784, 1047], 2.0, 0.25),
+    bankai:  synthTone(110, 1.5, 'sawtooth', 0.3, 0.05, 0.8),
+    quincy:  synthChime([880, 1108, 1318, 1760], 1.8, 0.2),
+    hollow:  synthNoise(1.2, 0.25, 0.02, 0.5),
+    getsuga: synthImpact(0.8, 0.6),
+    fusion:  synthImpact(1.2, 0.7),
+    mugetsu: synthTone(60, 3.0, 'sawtooth', 0.35, 0.1, 1.5),
+  };
+}
+
+function playSound(name, vol=1.0) {
+  if (!audioReady || !audioBuffers[name]) return;
+  try {
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioBuffers[name];
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = vol;
+    src.connect(gainNode);
+    // FIX #8: Route through analyser so visualiser shows activity
+    gainNode.connect(analyser);
+    src.start(0);
+  } catch(e) {}
+}
+
+function startHum(freq, vol) {
+  if (!audioReady) return;
+  stopHum();
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.3);
+    osc.connect(gain);
+    // FIX #8: Route hum through analyser too
+    gain.connect(analyser);
+    osc.start();
+    reiatsuHum = { osc, gain };
+  } catch(e) {}
+}
+function stopHum() {
+  if (!reiatsuHum) return;
+  const h = reiatsuHum;
+  reiatsuHum = null;
+  // FIX #14: Clear any previously queued stop before scheduling a new one
+  if (humStopTimeout) { clearTimeout(humStopTimeout); humStopTimeout = null; }
+  try {
+    h.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+    h.gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+    humStopTimeout = setTimeout(() => {
+      try { h.osc.stop(); h.osc.disconnect(); h.gain.disconnect(); } catch(e){}
+      humStopTimeout = null;
+    }, 350);
+  } catch(e) {}
+}
+
+function getFreqData() {
+  if (!analyser) return new Uint8Array(128);
+  const d = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(d);
+  return d;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  THREE.JS SETUP
+// ═══════════════════════════════════════════════════════════════════════
+const threeCanvas = document.getElementById('three-canvas');
+threeCanvas.width = window.innerWidth; threeCanvas.height = window.innerHeight;
+
+const scene = new THREE.Scene();
+const cam3  = new THREE.PerspectiveCamera(CFG.CAM.fov, window.innerWidth/window.innerHeight, 0.1, 2000);
+cam3.position.z = CFG.CAM.z;
+
+const renderer = new THREE.WebGLRenderer({ canvas:threeCanvas, antialias:true, alpha:false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 1);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, cam3));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  CFG.BLOOM.defaultStrength, CFG.BLOOM.radius, CFG.BLOOM.threshold
+);
+composer.addPass(bloomPass);
+
+const ChromaShader = {
+  uniforms: { tDiffuse:{value:null}, strength:{value:0.0} },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float strength;
+    varying vec2 vUv;
+    void main(){
+      vec2 dir = vUv - 0.5;
+      float dist = length(dir);
+      vec2 offset = normalize(dir) * dist * strength * 0.015;
+      float r = texture2D(tDiffuse, vUv + offset).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv - offset).b;
+      gl_FragColor = vec4(r,g,b,1.0);
+    }`,
+};
+const chromaPass = new ShaderPass(ChromaShader);
+composer.addPass(chromaPass);
+
+const fxCanvas   = document.getElementById('fx-canvas');
+const fxCtx      = fxCanvas.getContext('2d');
+const inkCanvas  = document.getElementById('ink-canvas');
+const inkCtx     = inkCanvas.getContext('2d');
+const dbgCanvas  = document.getElementById('debug-canvas');
+const dbgCtx     = dbgCanvas.getContext('2d');
+const audioVisC  = document.getElementById('audio-vis-canvas');
+const audioVisCtx= audioVisC.getContext('2d');
+
+// FIX #15: Only resize canvases on resize event, not every frame
+function resizeCanvases() {
+  [fxCanvas, inkCanvas, dbgCanvas].forEach(c => { c.width=window.innerWidth; c.height=window.innerHeight; });
+  audioVisC.width = audioVisC.offsetWidth; audioVisC.height = audioVisC.offsetHeight;
+}
+resizeCanvases();
+
+function s2w(sx, sy) {
+  const fov = cam3.fov * Math.PI/180;
+  const halfH = cam3.position.z * Math.tan(fov/2);
+  const halfW = halfH * cam3.aspect;
+  return new THREE.Vector3(
+    ((sx/window.innerWidth)  - 0.5) * 2 * halfW,
+    -((sy/window.innerHeight) - 0.5) * 2 * halfH, 0
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  PARTICLE FACTORY
+// ═══════════════════════════════════════════════════════════════════════
+const N = CFG.N;
+
+function mkSys() {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(N*3);
+  const col = new Float32Array(N*3);
+  const siz = new Float32Array(N);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  geo.setAttribute('size',     new THREE.BufferAttribute(siz,1));
+  // NOTE #11: PointsMaterial ignores per-particle 'size' attribute — uniform size only.
+  // Kept as-is; upgrading to ShaderMaterial would be a larger refactor.
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    size:0.28, vertexColors:true,
+    blending:THREE.AdditiveBlending, transparent:true, depthWrite:false,
+  }));
+  pts.visible = false;
+  scene.add(pts);
+  return {
+    pts, geo, pos, col, siz,
+    tPos:new Float32Array(N*3), tCol:new Float32Array(N*3), tSiz:new Float32Array(N),
+    worldPos:new THREE.Vector3(), targetWorldPos:new THREE.Vector3(),
+    shape:'', visible:false, opacity:0,
+  };
+}
+
+const sysL = mkSys();
+const sysR = mkSys();
+const sysM = mkSys();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SHAPE GENERATORS
+// ═══════════════════════════════════════════════════════════════════════
+function genShikai(i) {
+  const C = CFG.SHIKAI;
+  if (i < N*C.coreRatio) {
+    const r=Math.random()*C.coreRadius, th=Math.random()*6.28, ph=Math.acos(2*Math.random()-1);
+    return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize};
+  }
+  const t=i/N, arm=i%C.arms, angle=t*C.spiralSpeed+arm*(Math.PI*2/C.arms), radius=C.spiralStartRadius+t*C.spiralRadius, fade=Math.random();
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(C.spiralDepth*t),r:C.armColor.r*fade,g:C.armColor.g*fade,b:C.armColor.b*fade,s:C.armSize};
+}
+
+function genBankai(i) {
+  const C = CFG.BANKAI;
+  if (i < N*C.coreRatio) {
+    const r=Math.random()*C.coreRadius, th=Math.random()*6.28, ph=Math.acos(2*Math.random()-1);
+    const ef=r/C.coreRadius;
+    return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:C.edgeColor.r*ef,g:C.edgeColor.g*ef,b:C.edgeColor.b*ef,s:C.coreSize};
+  }
+  const t=i/N, arm=i%C.arms, angle=-(t*C.spiralSpeed+arm*(Math.PI*2/C.arms)), radius=C.spiralStartRadius+t*C.spiralRadius, eg=Math.random()>0.85;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(C.spiralDepth*t),r:eg?C.edgeColor.r:C.armColor.r,g:eg?C.edgeColor.g:C.armColor.g,b:eg?C.edgeColor.b*1.2:C.armColor.b,s:C.armSize};
+}
+
+function genQuincy(i) {
+  const C = CFG.QUINCY; const t=i/N;
+  if (t<0.2) { const x=(Math.random()-0.5)*C.crossSize,y=(Math.random()-0.5)*C.crossThickness; return {x,y,z:(Math.random()-0.5)*2,r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize}; }
+  if (t<0.4) { const x=(Math.random()-0.5)*C.crossThickness,y=(Math.random()-0.5)*C.crossSize; return {x,y,z:(Math.random()-0.5)*2,r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize}; }
+  const angle=t*Math.PI*2, r=C.ringRadius+(Math.random()-0.5)*C.ringThickness, br=0.5+Math.random()*0.5;
+  return {x:r*Math.cos(angle),y:r*Math.sin(angle),z:(Math.random()-0.5)*4,r:C.armColor.r*br,g:C.armColor.g*br,b:C.armColor.b*br,s:C.armSize};
+}
+
+function genHollow(i) {
+  const C = CFG.HOLLOW;
+  if (i<N*C.coreRatio) { const r=Math.random()*C.coreRadius,th=Math.random()*6.28,ph=Math.acos(2*Math.random()-1); return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize}; }
+  const t=i/N, arm=i%C.arms, angle=t*C.spiralSpeed+arm*(Math.PI*2/C.arms), radius=C.spiralStartRadius+t*C.spiralRadius, fl=0.6+Math.random()*0.6;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(C.spiralDepth*t),r:C.armColor.r*fl,g:C.armColor.g*fl,b:C.armColor.b,s:C.armSize};
+}
+
+function genGetsuga(i) {
+  const t=i/N, angle=-Math.PI*0.6+t*Math.PI*1.2, radius=14+(Math.random()-0.5)*8, eg=radius>19.5||radius<8.5;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*6,r:eg?2.0:0.03,g:eg?1.8:0.03,b:eg?1.2:0.05,s:eg?2.5:1.0};
+}
+
+// FIX #2: Warp range centralised in CFG; x spawns in [-warpRange, +warpRange]
+function genMugetsuWarp(i) {
+  const R = CFG.MUGETSU.warpRange;
+  const y=(Math.random()-0.5)*80, z=(Math.random()-0.5)*80, x=(Math.random()-0.5)*R*2, dk=Math.random()>0.3;
+  return {x,y,z,r:dk?0.01:1.2,g:dk?0.01:1.0,b:dk?0.02:0.7,s:0.3+Math.random()*2.5};
+}
+
+function genMugetsu(i) {
+  const t=i/N;
+  if (t<0.3) { const r=Math.random()*20,th=Math.random()*6.28,ph=Math.acos(2*Math.random()-1); return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:0.01,g:0.01,b:0.02,s:1.0}; }
+  const arms=8, arm=i%arms, angle=t*25+arm*(Math.PI*2/arms), radius=5+t*80, eg=Math.random()>0.88;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(20*t),r:eg?1.5:0.01,g:eg?1.2:0.01,b:eg?0.9:0.02,s:eg?2.0:0.7};
+}
+
+function setShape(sys, fn) {
+  for (let i=0;i<N;i++) {
+    const p=fn(i);
+    sys.tPos[i*3]=p.x; sys.tPos[i*3+1]=p.y; sys.tPos[i*3+2]=p.z;
+    sys.tCol[i*3]=p.r; sys.tCol[i*3+1]=p.g; sys.tCol[i*3+2]=p.b;
+    sys.tSiz[i]=p.s;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  UI
+// ═══════════════════════════════════════════════════════════════════════
+const techJP   = document.getElementById('technique-jp');
+const techEN   = document.getElementById('technique-en');
+const zanEl    = document.getElementById('zanpakuto-name');
+const epBanner = document.getElementById('episode-banner');
+const epLine   = document.getElementById('ep-line-text');
+const epSub    = document.getElementById('ep-sub-text');
+const hollowOv = document.getElementById('hollow-overlay');
+const mugetsuOv= document.getElementById('mugetsu-overlay');
+const audioVisEl= document.getElementById('audio-vis');
+const vidEl    = document.getElementById('camera-video');
+const hudFPS   = document.getElementById('hud-fps');
+const hudTech  = document.getElementById('hud-tech');
+const hudHands = document.getElementById('hud-hands');
+const chargeFill= document.getElementById('charge-bar-fill');
+const chargeWrap= document.getElementById('charge-bar-wrap');
+const bars     = { reiatsu:document.getElementById('bar-reiatsu'), bankai:document.getElementById('bar-bankai'), hollow:document.getElementById('bar-hollow'), quincy:document.getElementById('bar-quincy') };
+
+const TECH_DATA = {
+  neutral: { jp:'待機中',   en:'STANDBY',               color:'#8a8478', bars:{reiatsu:0,   bankai:0,  hollow:0,   quincy:0  }, hum:0,   chromaStr:0,   vidClass:''       },
+  shikai:  { jp:'始解',     en:'INITIAL RELEASE',       color:'#e8e0d0', bars:{reiatsu:80,  bankai:10, hollow:5,   quincy:5  }, hum:440, chromaStr:0.3, vidClass:''       },
+  bankai:  { jp:'卍解',     en:'FINAL RELEASE',         color:'#cccccc', bars:{reiatsu:100, bankai:95, hollow:15,  quincy:0  }, hum:110, chromaStr:0.5, vidClass:'bankai' },
+  quincy:  { jp:'滅却師',   en:'QUINCY — LETZT STIL',  color:'#4488ff', bars:{reiatsu:70,  bankai:0,  hollow:0,   quincy:100}, hum:880, chromaStr:0.8, vidClass:'quincy' },
+  hollow:  { jp:'虚化',     en:'HOLLOWIFICATION',       color:'#ff6a00', bars:{reiatsu:100, bankai:60, hollow:100, quincy:0  }, hum:55,  chromaStr:0.4, vidClass:'hollow' },
+  getsuga: { jp:'月牙天衝', en:'GETSUGA TENSHOU',       color:'#d4c8aa', bars:{reiatsu:100, bankai:85, hollow:40,  quincy:0  }, hum:0,   chromaStr:0.9, vidClass:''       },
+  fusing:  { jp:'解放',     en:'RELEASING REIATSU...',  color:'#ffffff', bars:{reiatsu:100, bankai:100,hollow:70,  quincy:0  }, hum:220, chromaStr:0.6, vidClass:''       },
+  mugetsu: { jp:'無月',     en:'MUGETSU — FINAL GETSUGA',color:'#888888',bars:{reiatsu:100, bankai:100,hollow:100, quincy:0 }, hum:60,  chromaStr:1.5, vidClass:'mugetsu'},
+};
+
+function setTech(name) {
+  const d = TECH_DATA[name] || TECH_DATA.neutral;
+  techJP.textContent = d.jp;
+  techEN.textContent = d.en;
+  techJP.style.color = d.color;
+  techJP.style.textShadow = `0 0 20px ${d.color}88`;
+  techEN.style.color = d.color + '88';
+  const vis = name !== 'neutral';
+  techJP.style.opacity = vis ? '1' : '0';
+  techEN.style.opacity = vis ? '0.7' : '0';
+  for (const [k,v] of Object.entries(d.bars)) bars[k].style.width = v+'%';
+  hollowOv.style.opacity  = name==='hollow'  ? '1' : '0';
+  mugetsuOv.style.opacity = name==='mugetsu' ? '0.85' : '0';
+  vidEl.className = d.vidClass;
+  chromaPass.uniforms.strength.value = d.chromaStr;
+  audioVisEl.style.opacity = name !== 'neutral' ? '1' : '0';
+  if (d.hum > 0) startHum(d.hum, name==='mugetsu'?0.08:0.04);
+  else stopHum();
+  Bus.emit('technique', { name, data:d });
+  hudTech.textContent = 'TECH: ' + name.toUpperCase();
+}
+
+function showBanner(line, sub, dur=2200) {
+  epLine.textContent = line; epSub.textContent = sub;
+  epBanner.style.opacity = '1';
+  clearTimeout(showBanner._t);
+  showBanner._t = setTimeout(() => epBanner.style.opacity='0', dur);
+}
+
+function showZanpakuto(name, dur=1800) {
+  zanEl.textContent = name; zanEl.style.opacity = '1';
+  clearTimeout(showZanpakuto._t);
+  showZanpakuto._t = setTimeout(() => zanEl.style.opacity='0', dur);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  INK SPLATTER
+// ═══════════════════════════════════════════════════════════════════════
+const inks = [];
+function spawnInk(x, y, intensity, color='#e8e0d0') {
+  const count = 3 + Math.floor(intensity*3);
+  for (let i=0;i<count;i++) {
+    inks.push({
+      x: x+(Math.random()-0.5)*intensity*40, y: y+(Math.random()-0.5)*intensity*40,
+      r: 15+Math.random()*intensity*55,
+      alpha: 0.5+Math.random()*0.4, life:1.0,
+      decay: 0.002+Math.random()*0.004, color,
+    });
+  }
+}
+function updateInk() {
+  // FIX #15: Do not resize every frame; just clear
+  inkCtx.clearRect(0,0,inkCanvas.width,inkCanvas.height);
+  for (let i=inks.length-1;i>=0;i--) {
+    const s=inks[i]; s.life -= s.decay;
+    if (s.life<=0) { inks.splice(i,1); continue; }
+    const a = s.alpha*s.life*0.22;
+    inkCtx.beginPath(); inkCtx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    inkCtx.fillStyle = s.color + Math.floor(a*255).toString(16).padStart(2,'0');
+    inkCtx.fill();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  FX CANVAS — aura rings
+// ═══════════════════════════════════════════════════════════════════════
+const auraRings = [];
+function spawnAura(wx, wy, color) {
+  const fov = cam3.fov * Math.PI/180;
+  const halfH = cam3.position.z * Math.tan(fov/2);
+  const halfW = halfH * cam3.aspect;
+  const sx = (wx/(2*halfW)+0.5)*window.innerWidth;
+  const sy = (-wy/(2*halfH)+0.5)*window.innerHeight;
+  auraRings.push({ x:sx, y:sy, r:10, maxR:80+Math.random()*60, alpha:0.8, color });
+}
+function updateFX() {
+  // FIX #15: Just clear — no resize each frame
+  fxCtx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+  for (let i=auraRings.length-1;i>=0;i--) {
+    const a=auraRings[i];
+    a.r += (a.maxR-a.r)*0.08;
+    a.alpha *= 0.94;
+    if (a.alpha<0.01) { auraRings.splice(i,1); continue; }
+    fxCtx.beginPath();
+    fxCtx.arc(a.x,a.y,a.r,0,Math.PI*2);
+    fxCtx.strokeStyle = a.color + Math.floor(a.alpha*255).toString(16).padStart(2,'0');
+    fxCtx.lineWidth = 2;
+    fxCtx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AUDIO VISUALISER
+// ═══════════════════════════════════════════════════════════════════════
+function drawAudioVis(techColor) {
+  if (!audioReady) return;
+  const freq = getFreqData();
+  const W = audioVisC.width, H = audioVisC.height;
+  audioVisCtx.clearRect(0,0,W,H);
+  const bins = Math.floor(freq.length/2);
+  const barW = W / bins;
+  for (let i=0;i<bins;i++) {
+    const v = freq[i]/255;
+    const h = v*H;
+    const alpha = 0.3 + v*0.7;
+    audioVisCtx.fillStyle = techColor + Math.floor(alpha*255).toString(16).padStart(2,'0');
+    audioVisCtx.fillRect(i*barW, H-h, Math.max(1, barW-1), h);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════════
+let currentTech  = 'neutral';
+let shakeIntensity = 0;
+let fusionActive = false, fusionPhase=0, fusionTimer=0;
+let fusionAngle=0, fusionSpeed=CFG.FUSION.orbitSpeed, fusionRadius=CFG.FUSION.orbitStartRadius;
+let fusionCenter = new THREE.Vector3();
+let getsugaActive=false, getsugaTimer=0, getsugaSys=null;
+let mugetsuPhase=0, mugetsuTimer=0;
+let snapCooldown=0, chargeL=0, chargeR=0;
+let handCount = 0;
+
+let fps=0, fpsTimer=performance.now(), fpsFrames=0;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  GESTURE HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+const lmPx = lm => ({x:lm.x*window.innerWidth, y:lm.y*window.innerHeight});
+const fingerUp = (lm,t,p) => lm[t].y < lm[p].y;
+function countUp(lm) {
+  let c=0;
+  for (const [t,p] of [[8,6],[12,10],[16,14],[20,18]]) if (fingerUp(lm,t,p)) c++;
+  if (Math.abs(lm[4].x-lm[3].x)>0.04) c++;
+  return c;
+}
+const isOpen  = lm => countUp(lm) >= 4;
+const isFist  = lm => countUp(lm) === 0;
+// FIX #4: Snap = thumb tip (4) close to middle-finger MCP (9), with middle + ring folded down.
+// This better matches an actual snap pose than thumb→middle-tip.
+function isSnap(lm) {
+  const close = Math.hypot(lm[4].x-lm[9].x, lm[4].y-lm[9].y) < CFG.DETECT.snapThreshold;
+  const middleDown = !fingerUp(lm,12,10);
+  const ringDown   = !fingerUp(lm,16,14);
+  return close && middleDown && ringDown;
+}
+const isThreePoint = lm => fingerUp(lm,8,6)&&fingerUp(lm,12,10)&&fingerUp(lm,16,14)&&!fingerUp(lm,20,18);
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MEDIAPIPE
+// ═══════════════════════════════════════════════════════════════════════
+const mpHands = new Hands({ locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+mpHands.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:CFG.DETECT.minDetect, minTrackingConfidence:CFG.DETECT.minTrack });
+mpHands.onResults(onResults);
+
+function onResults(res) {
+  dbgCtx.clearRect(0,0,dbgCanvas.width,dbgCanvas.height);
+
+  handCount = res.multiHandLandmarks?.length || 0;
+  hudHands.textContent = 'HANDS: ' + handCount;
+
+  // FIX #10: Always tick down snap cooldown regardless of branch
+  if (snapCooldown > 0) snapCooldown--;
+
+  if (!handCount) {
+    fadeBoth();
+    if (!fusionActive && !getsugaActive && mugetsuPhase===0) setTechState('neutral');
+    chargeL=0; chargeR=0;
+    updateChargeBar(0);
+    return;
+  }
+
+  initAudio();
+  drawSkeleton(res);
+
+  // FIX #5: Because the video is mirrored via CSS (scaleX(-1)),
+  // MediaPipe's 'Left' label refers to the hand that APPEARS on the right of the screen,
+  // i.e. the user's right physical hand. We bind:
+  //   label==='Left'  → rightLM (right-side-on-screen hand)
+  //   label==='Right' → leftLM  (left-side-on-screen hand)
+  // This matches the screen-side UX the gesture hint implies (L-OPEN/R-OPEN).
+  let leftLM=null, rightLM=null;
+  for (let i=0;i<res.multiHandLandmarks.length;i++) {
+    if (res.multiHandedness[i].label==='Left') rightLM=res.multiHandLandmarks[i];
+    else leftLM=res.multiHandLandmarks[i];
+  }
+
+  if (fusionActive || getsugaActive || mugetsuPhase>0) return;
+
+  // ── MUGETSU ──
+  if (leftLM && rightLM && isThreePoint(leftLM) && isThreePoint(rightLM)) {
+    chargeL++; chargeR++;
+    // FIX #12: Use min(chargeL,chargeR) so both hands must be sustained
+    const progress = Math.min(chargeL, chargeR) / CFG.DETECT.mugetsuFrames;
+    updateChargeBar(progress);
+    if (progress >= 1) { triggerMugetsu(); chargeL=0; chargeR=0; }
+    return;
+  } else { chargeL=0; chargeR=0; updateChargeBar(0); }
+
+  // ── HOLLOW ──
+  if (leftLM && rightLM && isFist(leftLM) && isFist(rightLM)) { activateHollow(leftLM,rightLM); return; }
+
+  // ── SNAP ──
+  if (snapCooldown<=0) {
+    const doSnap = (leftLM&&isSnap(leftLM)) || (rightLM&&isSnap(rightLM));
+    if (doSnap && (sysL.visible||sysR.visible)) {
+      triggerGetsuga(leftLM||rightLM);
+      snapCooldown=CFG.DETECT.snapCooldown;
+      return;
+    }
+  }
+
+  // ── QUINCY ──
+  if (leftLM && rightLM && isOpen(leftLM) && isOpen(rightLM)) { activateQuincy(leftLM,rightLM); return; }
+
+  // ── Shikai / Bankai ──
+  const lPx = leftLM  ? lmPx(leftLM[9])  : null;
+  const rPx = rightLM ? lmPx(rightLM[9]) : null;
+
+  if (leftLM && isOpen(leftLM))   activateShikai(lPx);
+  else fadeOut(sysL);
+
+  if (rightLM && isOpen(rightLM)) activateBankai(rPx);
+  else fadeOut(sysR);
+
+  if (sysL.visible && sysR.visible && lPx && rPx) {
+    if (Math.hypot(lPx.x-rPx.x, lPx.y-rPx.y) < 120) { triggerFusion(lPx,rPx); return; }
+    setTechState('shikai');
+  } else if (sysL.visible) setTechState('shikai');
+  else if (sysR.visible)   setTechState('bankai');
+  else if (!fusionActive)  setTechState('neutral');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TECHNIQUE ACTIVATORS
+// ═══════════════════════════════════════════════════════════════════════
+function activateShikai(px) {
+  if (sysL.shape!=='shikai') { setShape(sysL,genShikai); sysL.shape='shikai'; }
+  sysL.targetWorldPos.copy(s2w(px.x,px.y));
+  sysL.visible=true; sysL.pts.visible=true;
+  sysL.opacity=Math.min(1,sysL.opacity+CFG.ANIM.fadeIn);
+  if (currentTech!=='shikai'&&currentTech!=='bankai') setTechState('shikai');
+}
+
+function activateBankai(px) {
+  if (sysR.shape!=='bankai') { setShape(sysR,genBankai); sysR.shape='bankai'; }
+  sysR.targetWorldPos.copy(s2w(px.x,px.y));
+  sysR.visible=true; sysR.pts.visible=true;
+  sysR.opacity=Math.min(1,sysR.opacity+CFG.ANIM.fadeIn);
+  if (currentTech!=='bankai') setTechState('bankai');
+}
+
+function activateQuincy(lLM,rLM) {
+  const cx=(lmPx(lLM[9]).x+lmPx(rLM[9]).x)/2, cy=(lmPx(lLM[9]).y+lmPx(rLM[9]).y)/2;
+  if (sysL.shape!=='quincy') { setShape(sysL,genQuincy); sysL.shape='quincy'; }
+  if (sysR.shape!=='quincy') { setShape(sysR,genQuincy); sysR.shape='quincy'; }
+  const wp=s2w(cx,cy);
+  sysL.targetWorldPos.copy(wp); sysR.targetWorldPos.copy(wp);
+  sysL.visible=sysR.visible=true; sysL.pts.visible=sysR.pts.visible=true;
+  sysL.opacity=Math.min(1,sysL.opacity+CFG.ANIM.fadeIn);
+  sysR.opacity=Math.min(1,sysR.opacity+CFG.ANIM.fadeIn);
+  if (currentTech!=='quincy') {
+    setTechState('quincy');
+    showBanner('滅却師','QUINCY LETZT STIL');
+    showZanpakuto('光翼');
+    playSound('quincy', 0.7);
+    spawnInk(cx,cy,2.0,'#4488ff');
+    spawnAura(wp.x,wp.y,'#4488ff');
+  }
+}
+
+function activateHollow(lLM,rLM) {
+  const cx=(lmPx(lLM[9]).x+lmPx(rLM[9]).x)/2, cy=(lmPx(lLM[9]).y+lmPx(rLM[9]).y)/2;
+  if (sysL.shape!=='hollow') { setShape(sysL,genHollow); sysL.shape='hollow'; }
+  if (sysR.shape!=='hollow') { setShape(sysR,genHollow); sysR.shape='hollow'; }
+  const wp=s2w(cx,cy);
+  sysL.targetWorldPos.copy(new THREE.Vector3(wp.x-10,wp.y,0));
+  sysR.targetWorldPos.copy(new THREE.Vector3(wp.x+10,wp.y,0));
+  sysL.visible=sysR.visible=true; sysL.pts.visible=sysR.pts.visible=true;
+  sysL.opacity=Math.min(1,sysL.opacity+CFG.ANIM.fadeIn);
+  sysR.opacity=Math.min(1,sysR.opacity+CFG.ANIM.fadeIn);
+  if (currentTech!=='hollow') {
+    setTechState('hollow');
+    showBanner('虚化','HOLLOW MASK RESONANCE');
+    showZanpakuto('滅月');
+    playSound('hollow',0.8);
+    spawnInk(cx,cy,3,'#ff6a00');
+    spawnAura(wp.x,wp.y,'#ff6a00');
+  }
+}
+
+function triggerGetsuga(lm) {
+  const px=lmPx(lm[9]);
+  getsugaActive=true; getsugaTimer=0;
+  getsugaSys=sysL;
+  if (getsugaSys.shape!=='getsuga') { setShape(getsugaSys,genGetsuga); getsugaSys.shape='getsuga'; }
+  getsugaSys.visible=true; getsugaSys.pts.visible=true; getsugaSys.opacity=1;
+  const wp=s2w(px.x,px.y);
+  getsugaSys.worldPos.copy(wp); getsugaSys.targetWorldPos.copy(wp);
+  getsugaSys.pts.position.copy(wp);
+  setTechState('getsuga');
+  showBanner('月牙天衝','GETSUGA TENSHOU');
+  playSound('getsuga',0.9);
+  spawnInk(px.x,px.y,2,'#e8e0d0');
+  spawnAura(wp.x,wp.y,'#e8e0d0');
+  bloomPass.strength=CFG.GETSUGA.bloom;
+  shakeIntensity=CFG.GETSUGA.shake;
+}
+
+function triggerFusion(lPx,rPx) {
+  if (fusionActive) return;
+  fusionActive=true; fusionPhase=1; fusionTimer=0;
+  fusionAngle=0; fusionSpeed=CFG.FUSION.orbitSpeed; fusionRadius=CFG.FUSION.orbitStartRadius;
+  fusionCenter.copy(s2w((lPx.x+rPx.x)/2,(lPx.y+rPx.y)/2));
+  sysL.visible=sysR.visible=true; sysL.pts.visible=sysR.pts.visible=true;
+  sysL.opacity=sysR.opacity=1;
+  if (sysL.shape!=='shikai') { setShape(sysL,genShikai); sysL.shape='shikai'; }
+  if (sysR.shape!=='bankai') { setShape(sysR,genBankai); sysR.shape='bankai'; }
+  bloomPass.strength=CFG.FUSION.orbitBloom; shakeIntensity=CFG.FUSION.orbitShake;
+  setTechState('fusing');
+  showBanner('解放','REIATSU MERGING...');
+  playSound('fusion',0.8);
+}
+
+function triggerMugetsu() {
+  mugetsuPhase=1; mugetsuTimer=0;
+  setShape(sysM,genMugetsuWarp); sysM.shape='warp';
+  // FIX #1: Sync live pos array to target so warp animation sees particles at correct locations immediately
+  sysM.pos.set(sysM.tPos);
+  sysM.col.set(sysM.tCol);
+  sysM.siz.set(sysM.tSiz);
+  sysM.geo.attributes.position.needsUpdate = true;
+  sysM.geo.attributes.color.needsUpdate = true;
+  sysM.geo.attributes.size.needsUpdate = true;
+  sysM.visible=true; sysM.pts.visible=true; sysM.opacity=1;
+  sysM.worldPos.set(0,0,0); sysM.targetWorldPos.set(0,0,0);
+  bloomPass.strength=CFG.MUGETSU.bloom; shakeIntensity=CFG.MUGETSU.shake;
+  setTechState('mugetsu');
+  showBanner('無月','FINAL GETSUGA TENSHOU',3500);
+  showZanpakuto('無月');
+  playSound('mugetsu',0.9);
+  spawnInk(window.innerWidth/2,window.innerHeight/2,5,'#888888');
+  spawnAura(0,0,'#ffffff');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+function setTechState(t) {
+  if (currentTech===t) return;
+  currentTech=t;
+  setTech(t);
+  Bus.emit('technique_change', { technique:t });
+}
+function fadeOut(sys) {
+  sys.opacity-=CFG.ANIM.fadeOut;
+  if (sys.opacity<=0) { sys.visible=false; sys.opacity=0; sys.pts.visible=false; sys.shape=''; }
+}
+function fadeBoth() { fadeOut(sysL); fadeOut(sysR); }
+
+function updateChargeBar(progress) {
+  chargeWrap.style.opacity = progress>0 ? '1' : '0';
+  chargeFill.style.width = (Math.min(1, progress)*100)+'%';
+  const hue = Math.round(Math.min(1, progress)*30);
+  chargeFill.style.background = `hsl(${hue},100%,80%)`;
+  chargeFill.style.boxShadow = `0 0 6px hsl(${hue},100%,80%)`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SKELETON
+// ═══════════════════════════════════════════════════════════════════════
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function drawSkeleton(res) {
+  const W=dbgCanvas.width, H=dbgCanvas.height;
+  for (let h=0;h<res.multiHandLandmarks.length;h++) {
+    const lm=res.multiHandLandmarks[h], label=res.multiHandedness[h].label;
+    const col = label==='Left' ? '#4488ff' : '#e8e0d0';
+    dbgCtx.strokeStyle=col+'55'; dbgCtx.lineWidth=1.5;
+    for (const [a,b] of CONN) {
+      dbgCtx.beginPath();
+      dbgCtx.moveTo((1-lm[a].x)*W,lm[a].y*H);
+      dbgCtx.lineTo((1-lm[b].x)*W,lm[b].y*H);
+      dbgCtx.stroke();
+    }
+    for (let i=0;i<lm.length;i++) {
+      dbgCtx.beginPath();
+      dbgCtx.arc((1-lm[i].x)*W,lm[i].y*H,i===0?5:3,0,Math.PI*2);
+      dbgCtx.fillStyle = i===8?'#fff':i===12?'#ff6a00':col;
+      dbgCtx.fill();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SYSTEM UPDATE
+// ═══════════════════════════════════════════════════════════════════════
+function updateSys(sys) {
+  sys.pts.visible = sys.visible||sys.opacity>0;
+  if (!sys.pts.visible) return;
+  sys.worldPos.lerp(sys.targetWorldPos, CFG.ANIM.lerpPos);
+  sys.pts.position.copy(sys.worldPos);
+  const fm=Math.max(0,sys.opacity);
+  for (let i=0;i<N*3;i++) {
+    sys.pos[i]+=(sys.tPos[i]-sys.pos[i])*CFG.ANIM.lerpMorph;
+    sys.col[i]+=(sys.tCol[i]*fm-sys.col[i])*CFG.ANIM.lerpMorph;
+  }
+  for (let i=0;i<N;i++) sys.siz[i]+=(sys.tSiz[i]*fm-sys.siz[i])*CFG.ANIM.lerpMorph;
+  sys.geo.attributes.position.needsUpdate=true;
+  sys.geo.attributes.color.needsUpdate=true;
+  sys.geo.attributes.size.needsUpdate=true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ANIMATE
+// ═══════════════════════════════════════════════════════════════════════
+let frame=0;
+function animate() {
+  requestAnimationFrame(animate);
+  frame++;
+
+  const now = performance.now();
+  fpsFrames++;
+  if (now-fpsTimer > 800) {
+    fps = Math.round(fpsFrames*1000/(now-fpsTimer));
+    hudFPS.textContent = 'FPS: '+fps;
+    fpsFrames=0; fpsTimer=now;
+  }
+
+  // ── FUSION ──
+  if (fusionActive) {
+    if (fusionPhase===1||fusionPhase===2) {
+      fusionAngle+=fusionSpeed;
+      fusionSpeed*=CFG.FUSION.spiralSpeedUp;
+      fusionRadius*=CFG.FUSION.spiralShrinkRate;
+      if (fusionPhase===1&&fusionRadius<CFG.FUSION.orbitStartRadius*0.6) { fusionPhase=2; bloomPass.strength=CFG.FUSION.orbitBloom+2; shakeIntensity=CFG.FUSION.orbitShake+0.5; }
+      const rx=fusionCenter.x+Math.cos(fusionAngle)*fusionRadius, ry=fusionCenter.y+Math.sin(fusionAngle)*fusionRadius;
+      const bx=fusionCenter.x+Math.cos(fusionAngle+Math.PI)*fusionRadius, by=fusionCenter.y+Math.sin(fusionAngle+Math.PI)*fusionRadius;
+      sysL.worldPos.set(rx,ry,0); sysL.targetWorldPos.set(rx,ry,0); sysL.pts.position.set(rx,ry,0);
+      sysR.worldPos.set(bx,by,0); sysR.targetWorldPos.set(bx,by,0); sysR.pts.position.set(bx,by,0);
+      sysL.pts.rotation.z+=0.12; sysR.pts.rotation.z-=0.12;
+
+      if (frame%8===0) {
+        spawnAura(rx,ry,'#e8e0d0');
+        spawnAura(bx,by,'#888888');
+      }
+
+      if (fusionRadius<CFG.FUSION.collisionRadius) {
+        fusionPhase=3; fusionTimer=0;
+        bloomPass.strength=CFG.FUSION.explosionBloom; shakeIntensity=CFG.FUSION.explosionShake;
+        setShape(sysL,genHollow); sysL.shape='hollow_fused';
+        setShape(sysR,genHollow); sysR.shape='hollow_fused';
+        // FIX #6: Scatter BOTH pos and tPos so the morph lerp doesn't yank particles back
+        for (let i=0;i<N*3;i++) {
+          const jitterL=(Math.random()-0.5)*CFG.FUSION.explosionScatter;
+          const jitterR=(Math.random()-0.5)*CFG.FUSION.explosionScatter;
+          sysL.pos[i]+=jitterL; sysL.tPos[i]+=jitterL;
+          sysR.pos[i]+=jitterR; sysR.tPos[i]+=jitterR;
+        }
+        sysL.geo.attributes.position.needsUpdate=true; sysR.geo.attributes.position.needsUpdate=true;
+        sysL.worldPos.copy(fusionCenter); sysR.worldPos.copy(fusionCenter);
+        sysL.targetWorldPos.copy(fusionCenter); sysR.targetWorldPos.copy(fusionCenter);
+        sysL.pts.position.copy(fusionCenter); sysR.pts.position.copy(fusionCenter);
+        showBanner('解放完了','RELEASE COMPLETE');
+        showZanpakuto('滅月');
+        playSound('fusion',1.0);
+        spawnInk(window.innerWidth/2,window.innerHeight/2,3,'#ff6a00');
+        for (let k=0;k<6;k++) spawnAura((Math.random()-0.5)*30,(Math.random()-0.5)*20,'#ff6a00');
+      }
+    } else if (fusionPhase===3) {
+      fusionTimer++;
+      const p=fusionTimer/CFG.FUSION.explosionDuration;
+      bloomPass.strength=CFG.FUSION.explosionBloom+(CFG.HOLLOW.bloom-CFG.FUSION.explosionBloom)*p;
+      shakeIntensity=CFG.FUSION.explosionShake*(1-p);
+      sysL.targetWorldPos.copy(fusionCenter); sysR.targetWorldPos.copy(fusionCenter);
+      if (fusionTimer>=CFG.FUSION.explosionDuration) {
+        fusionActive=false; fusionPhase=0;
+        setTechState('hollow'); bloomPass.strength=CFG.HOLLOW.bloom; shakeIntensity=CFG.HOLLOW.shake;
+      }
+    }
+  }
+
+  // ── GETSUGA ──
+  if (getsugaActive&&getsugaSys) {
+    getsugaTimer++;
+    const p=getsugaTimer/CFG.GETSUGA.duration;
+    getsugaSys.worldPos.add(new THREE.Vector3(0,0,CFG.GETSUGA.speed*(1+p*4)));
+    getsugaSys.targetWorldPos.copy(getsugaSys.worldPos);
+    getsugaSys.pts.position.copy(getsugaSys.worldPos);
+    const sc=1+p*5;
+    getsugaSys.pts.scale.set(sc,sc,sc);
+    bloomPass.strength=CFG.GETSUGA.bloom*(1-p*0.4);
+    shakeIntensity=CFG.GETSUGA.shake*(1-p);
+    if (frame%3===0) spawnAura(getsugaSys.worldPos.x, getsugaSys.worldPos.y,'#e8e0d0');
+    if (getsugaTimer>CFG.GETSUGA.duration||getsugaSys.worldPos.z>CFG.CAM.z+30) {
+      // FIX #3: Reset scale on the actual system used (not hardcoded sysL)
+      const gs = getsugaSys;
+      getsugaActive=false;
+      gs.visible=false; gs.opacity=0; gs.worldPos.set(0,0,0);
+      gs.targetWorldPos.set(0,0,0); gs.shape='';
+      gs.pts.scale.set(1,1,1); gs.pts.visible=false;
+      getsugaSys=null;
+      setTechState('neutral'); bloomPass.strength=CFG.BLOOM.defaultStrength; shakeIntensity=0;
+    }
+  }
+
+  // ── MUGETSU ──
+  if (mugetsuPhase===1) {
+    mugetsuTimer++;
+    // FIX #1 + #2: Drive warp motion on tPos (the morph target) so the lerp in updateSys
+    // carries particles correctly, and wrap at the configured warp range
+    const R = CFG.MUGETSU.warpRange;
+    const tPos = sysM.tPos;
+    for (let i=0;i<N;i++) {
+      let x = tPos[i*3] + CFG.MUGETSU.warpSpeed;
+      if (x >  R) x -= R*2;
+      if (x < -R) x += R*2;
+      tPos[i*3] = x;
+    }
+    if (mugetsuTimer>CFG.MUGETSU.warpDuration) { mugetsuPhase=2; mugetsuTimer=0; setShape(sysM,genMugetsu); sysM.shape='mugetsu'; }
+  } else if (mugetsuPhase===2) {
+    mugetsuTimer++;
+    sysM.pts.rotation.z-=0.008; sysM.pts.rotation.x+=0.002;
+    if (frame%6===0) spawnAura((Math.random()-0.5)*20,(Math.random()-0.5)*15,'#888888');
+    if (mugetsuTimer>CFG.MUGETSU.darkDuration) { mugetsuPhase=3; mugetsuTimer=0; }
+  } else if (mugetsuPhase===3) {
+    sysM.opacity-=0.018;
+    if (sysM.opacity<=0) {
+      mugetsuPhase=0; sysM.visible=false; sysM.pts.visible=false; sysM.opacity=0; sysM.shape='';
+      setTechState('neutral'); bloomPass.strength=CFG.BLOOM.defaultStrength; shakeIntensity=0;
+    }
+  }
+
+  const rots = {
+    shikai:[CFG.SHIKAI.rotationSpeed,-CFG.SHIKAI.rotationSpeed],
+    bankai:[CFG.BANKAI.rotationSpeed*0.8,CFG.BANKAI.rotationSpeed],
+    quincy:[CFG.QUINCY.rotationSpeed,-CFG.QUINCY.rotationSpeed],
+    hollow:[CFG.HOLLOW.rotationSpeed*0.9,CFG.HOLLOW.rotationSpeed],
+    getsuga:[0.2,0.15], fusing:[0.18,-0.18], mugetsu:[0.005,-0.005],
+    neutral:[CFG.ANIM.neutralRot,-CFG.ANIM.neutralRot],
+  }[currentTech]||[CFG.ANIM.neutralRot,-CFG.ANIM.neutralRot];
+  sysL.pts.rotation.z+=rots[0];
+  sysR.pts.rotation.z+=rots[1];
+
+  if (currentTech==='quincy') { sysL.pts.rotation.y+=0.01; sysR.pts.rotation.y-=0.01; }
+  if (currentTech==='bankai') { const p=1+Math.sin(frame*0.05)*0.06; sysR.pts.scale.set(p,p,p); }
+  else if (currentTech!=='getsuga') sysR.pts.scale.set(1,1,1);
+
+  if (frame%20===0 && (currentTech==='shikai'||currentTech==='bankai')) {
+    if (sysL.visible) spawnAura(sysL.worldPos.x,sysL.worldPos.y, currentTech==='shikai'?'#e8e0d0':'#888888');
+    if (sysR.visible) spawnAura(sysR.worldPos.x,sysR.worldPos.y,'#cccccc');
+  }
+
+  updateSys(sysL); updateSys(sysR); updateSys(sysM);
+  updateInk(); updateFX();
+
+  const techColor = (TECH_DATA[currentTech]||TECH_DATA.neutral).color;
+  drawAudioVis(techColor);
+
+  if (shakeIntensity>0.01) {
+    const s=shakeIntensity*CFG.ANIM.shakeMultiplier;
+    threeCanvas.style.transform=`translate(${(Math.random()-0.5)*s}px,${(Math.random()-0.5)*s}px)`;
+    vidEl.style.transform=`scaleX(-1) translate(${(Math.random()-0.5)*s*0.3}px,${(Math.random()-0.5)*s*0.3}px)`;
+  } else {
+    threeCanvas.style.transform='';
+    vidEl.style.transform='scaleX(-1)';
+  }
+
+  composer.render();
+}
+animate();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════════════════════════════════
+function startCam() {
+  // FIX #7: Guard against Camera global being missing (CDN failure)
+  if (typeof Camera !== 'undefined') {
+    try {
+      new Camera(vidEl, {
+        onFrame: async () => { await mpHands.send({image:vidEl}); },
+        width:CFG.CAM.w, height:CFG.CAM.h,
+      }).start();
+      return;
+    } catch(e) {
+      console.warn('MediaPipe Camera helper failed, falling back to getUserMedia:', e);
+    }
+  }
+  navigator.mediaDevices.getUserMedia({ video:{width:{ideal:CFG.CAM.w},height:{ideal:CFG.CAM.h},facingMode:'user'} })
+  .then(stream => {
+    vidEl.srcObject=stream; vidEl.play();
+    let running = false;
+    async function loop() {
+      if (vidEl.readyState>=2 && !running) {
+        running = true;
+        try { await mpHands.send({image:vidEl}); } catch(e){}
+        running = false;
+      }
+      requestAnimationFrame(loop);
+    }
+    vidEl.addEventListener('loadeddata', loop);
+  }).catch(err => console.error('Camera error:',err));
+}
+startCam();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  BUS LISTENERS
+// ═══════════════════════════════════════════════════════════════════════
+Bus.on('technique_change', ({ technique }) => {
+  const techCfg = {
+    shikai:  { bloom:CFG.SHIKAI.bloom,  shake:CFG.SHIKAI.shake,  chroma:0.3 },
+    bankai:  { bloom:CFG.BANKAI.bloom,  shake:CFG.BANKAI.shake,  chroma:0.5 },
+    quincy:  { bloom:CFG.QUINCY.bloom,  shake:CFG.QUINCY.shake,  chroma:0.8 },
+    hollow:  { bloom:CFG.HOLLOW.bloom,  shake:CFG.HOLLOW.shake,  chroma:0.4 },
+    mugetsu: { bloom:CFG.MUGETSU.bloom, shake:CFG.MUGETSU.shake, chroma:1.5 },
+    neutral: { bloom:CFG.BLOOM.defaultStrength, shake:0, chroma:0 },
+  }[technique] || { bloom:CFG.BLOOM.defaultStrength, shake:0, chroma:0 };
+
+  // FIX #9: Only override bloom/shake when no transient effect owns them
+  if (!fusionActive && !getsugaActive && mugetsuPhase===0) {
+    bloomPass.strength = techCfg.bloom;
+    shakeIntensity     = techCfg.shake;
+    chromaPass.uniforms.strength.value = techCfg.chroma;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  cam3.aspect=window.innerWidth/window.innerHeight; cam3.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  composer.setSize(window.innerWidth,window.innerHeight);
+  threeCanvas.width=window.innerWidth; threeCanvas.height=window.innerHeight;
+  resizeCanvases();
+});
+
+</script>
+</body>
+</html>
