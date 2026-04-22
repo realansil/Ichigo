@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLEACH — 死神 REIATSU SYSTEM v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #020305;
+    --bone: #e8e0d0;
+    --ash: #8a8478;
+    --hollow-orange: #ff6a00;
+    --reiatsu-cyan: #00d4ff;
+    --reiatsu-teal: #00ffcc;
+    --quincy-blue: #4488ff;
+    --blood: #cc0022;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    overflow: hidden;
+    background: var(--ink);
+    font-family: 'Share Tech Mono', monospace;
+    cursor: crosshair;
+  }
+
+  #camera-video {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    object-fit: cover;
+    transform: scaleX(-1);
+    z-index: 1;
+    filter: saturate(0.25) contrast(1.3) brightness(0.65);
+    transition: filter 0.6s ease;
+  }
+  #camera-video.hollow  { filter: saturate(0.3) contrast(1.4) brightness(0.6) sepia(0.3) hue-rotate(-15deg); }
+  #camera-video.bankai  { filter: saturate(0) contrast(1.6) brightness(0.5); }
+  #camera-video.quincy  { filter: saturate(0.15) contrast(1.3) brightness(0.7) hue-rotate(200deg); }
+  #camera-video.mugetsu { filter: saturate(0) contrast(2.0) brightness(0.2); }
+
+  #three-canvas, #fx-canvas, #ink-canvas, #debug-canvas {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    pointer-events: none;
+  }
+  #three-canvas { z-index: 3; mix-blend-mode: screen; }
+  #fx-canvas    { z-index: 5; mix-blend-mode: screen; }
+  #ink-canvas   { z-index: 4; mix-blend-mode: multiply; opacity: 0.65; }
+  #debug-canvas { z-index: 6; transform: scaleX(-1); opacity: 0.55; }
+
+  #scanlines {
+    position: fixed; inset: 0; z-index: 7; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.055) 2px, rgba(0,0,0,0.055) 4px);
+  }
+  #vignette {
+    position: fixed; inset: 0; z-index: 7; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 50%, transparent 42%, rgba(0,0,0,0.82) 100%);
+  }
+  #chromatic-canvas {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none;
+    opacity: 0; transition: opacity 0.3s;
+    mix-blend-mode: screen;
+  }
+
+  #ui {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none;
+  }
+
+  #kanji-stamp {
+    position: absolute; top: 22px; left: 50%;
+    transform: translateX(-50%); text-align: center;
+  }
+  #kanji-stamp h1 {
+    font-family: 'Noto Serif JP', serif; font-weight: 900;
+    font-size: clamp(2rem, 5.5vw, 4.2rem);
+    color: var(--bone); letter-spacing: 0.32em; line-height: 1;
+    text-shadow: 0 0 40px rgba(0,212,255,0.25), 2px 2px 0 rgba(0,0,0,0.9);
+  }
+  #kanji-stamp .sub {
+    font-size: clamp(0.45rem, 1vw, 0.65rem);
+    color: var(--ash); letter-spacing: 0.55em; text-transform: uppercase; margin-top: 5px;
+  }
+
+  #technique-panel {
+    position: absolute; left: 22px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  #technique-jp {
+    font-family: 'Noto Serif JP', serif; font-weight: 700;
+    font-size: clamp(1.3rem, 2.8vw, 2.2rem);
+    color: var(--bone); writing-mode: vertical-rl;
+    letter-spacing: 0.12em; opacity: 0;
+    transition: color 0.35s, text-shadow 0.35s, opacity 0.35s;
+  }
+  #technique-en {
+    font-size: 0.55rem; letter-spacing: 0.3em; color: var(--ash);
+    text-transform: uppercase; writing-mode: vertical-rl;
+    opacity: 0; transition: color 0.35s, opacity 0.35s;
+  }
+
+  #stats-panel {
+    position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .stat-row { display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
+  .stat-label { font-size: 0.48rem; letter-spacing: 0.28em; color: var(--ash); text-transform: uppercase; }
+  .stat-bar-wrap {
+    width: 56px; height: 2px;
+    background: rgba(255,255,255,0.07); border-radius: 1px; overflow: hidden;
+  }
+  .stat-bar-fill {
+    height: 100%; width: 0%; border-radius: 1px;
+    transition: width 0.35s ease, box-shadow 0.35s;
+  }
+
+  #audio-vis {
+    position: absolute; bottom: 48px; left: 50%;
+    transform: translateX(-50%);
+    width: min(360px, 80vw); height: 32px;
+    opacity: 0; transition: opacity 0.5s;
+  }
+  #audio-vis canvas { width: 100%; height: 100%; }
+
+  #bottom-bar {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    text-align: center;
+  }
+  #gesture-hint {
+    font-size: 0.5rem; letter-spacing: 0.28em;
+    color: rgba(138,132,120,0.42); text-transform: uppercase;
+  }
+
+  #zanpakuto-name {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Noto Serif JP', serif; font-weight: 900;
+    font-size: clamp(3rem, 10vw, 7.5rem);
+    color: var(--bone); letter-spacing: 0.2em;
+    text-shadow: 0 0 60px rgba(255,255,255,0.28);
+    opacity: 0; pointer-events: none; text-align: center;
+    transition: opacity 0.25s;
+  }
+
+  #episode-banner {
+    position: absolute; bottom: 56px; left: 0; right: 0;
+    text-align: center; opacity: 0; pointer-events: none;
+    transition: opacity 0.45s;
+  }
+  #episode-banner .ep-line {
+    display: block; font-family: 'Noto Serif JP', serif;
+    font-size: clamp(1.1rem, 3.5vw, 2.6rem); font-weight: 300;
+    color: var(--bone); letter-spacing: 0.42em;
+    text-shadow: 0 0 28px rgba(232,224,208,0.48);
+  }
+  #episode-banner .ep-sub {
+    display: block; font-size: 0.5rem; letter-spacing: 0.5em;
+    color: var(--ash); margin-top: 7px; text-transform: uppercase;
+  }
+
+  #hollow-overlay {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 38%, rgba(255,106,0,0.09) 0%, transparent 62%);
+    opacity: 0; pointer-events: none; transition: opacity 0.5s; mix-blend-mode: overlay;
+  }
+  #mugetsu-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, #000 0%, #04000a 45%, #000 100%);
+    opacity: 0; pointer-events: none; transition: opacity 0.8s;
+  }
+
+  #hud-info {
+    position: absolute; top: 20px; left: 22px;
+    font-size: 0.42rem; letter-spacing: 0.22em; color: rgba(138,132,120,0.35);
+    text-transform: uppercase; line-height: 1.7;
+  }
+
+  #charge-bar-wrap {
+    position: absolute; bottom: 90px; left: 50%;
+    transform: translateX(-50%);
+    width: min(200px, 50vw); height: 2px;
+    background: rgba(255,255,255,0.07); border-radius: 1px;
+    overflow: hidden; opacity: 0; transition: opacity 0.2s;
+  }
+  #charge-bar-fill {
+    height: 100%; width: 0%;
+    background: var(--bone);
+    box-shadow: 0 0 6px var(--bone);
+    transition: background 0.2s;
+  }
+</style>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<video id="camera-video" autoplay playsinline muted></video>
+<canvas id="three-canvas"></canvas>
+<canvas id="chromatic-canvas"></canvas>
+<canvas id="fx-canvas"></canvas>
+<canvas id="ink-canvas"></canvas>
+<canvas id="debug-canvas"></canvas>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="ui">
+  <div id="kanji-stamp">
+    <h1>死神</h1>
+    <div class="sub">BLEACH — SOUL REAPER SYSTEM v2</div>
+  </div>
+
+  <div id="technique-panel">
+    <div id="technique-jp">待機中</div>
+    <div id="technique-en">STANDBY</div>
+  </div>
+
+  <div id="stats-panel">
+    <div class="stat-row">
+      <div class="stat-label">REIATSU</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-reiatsu" style="background:var(--reiatsu-cyan);box-shadow:0 0 4px var(--reiatsu-cyan)"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label">BANKAI</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-bankai" style="background:var(--bone);box-shadow:0 0 4px var(--bone)"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label">HOLLOW</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-hollow" style="background:var(--hollow-orange);box-shadow:0 0 4px var(--hollow-orange)"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label">QUINCY</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-fill" id="bar-quincy" style="background:var(--quincy-blue);box-shadow:0 0 4px var(--quincy-blue)"></div></div>
+    </div>
+  </div>
+
+  <div id="audio-vis"><canvas id="audio-vis-canvas"></canvas></div>
+
+  <div id="zanpakuto-name">斬月</div>
+  <div id="hollow-overlay"></div>
+  <div id="mugetsu-overlay"></div>
+
+  <div id="episode-banner">
+    <span class="ep-line" id="ep-line-text">斬月</span>
+    <span class="ep-sub"  id="ep-sub-text">ZANPAKUTO AWAKENED</span>
+  </div>
+
+  <div id="hud-info">
+    <div id="hud-fps">FPS: --</div>
+    <div id="hud-tech">TECH: NEUTRAL</div>
+    <div id="hud-hands">HANDS: 0</div>
+  </div>
+
+  <div id="charge-bar-wrap"><div id="charge-bar-fill"></div></div>
+
+  <div id="bottom-bar">
+    <div id="gesture-hint">L-OPEN: 始解 · R-OPEN: 卍解 · BOTH: 滅却師 · FISTS: 虚化 · SNAP: 月牙天衝 · 3-POINT: 無月</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }     from 'three/addons/postprocessing/ShaderPass.js';
+
+// ═══════════════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════════════
+const CFG = {
+  N: 12000,
+  SHIKAI:  { coreRatio:0.15, coreRadius:6,  coreColor:{r:2.5,g:2.0,b:1.5},  coreSize:2.2, arms:4,  spiralSpeed:12, spiralRadius:28, spiralStartRadius:3, spiralDepth:10, armColor:{r:0.9,g:0.85,b:0.7},  armSize:0.9,  rotationSpeed:0.06,  bloom:2.2, shake:0.15 },
+  BANKAI:  { coreRatio:0.10, coreRadius:9,  coreColor:{r:0.05,g:0.05,b:0.05},coreSize:3.0, arms:6,  spiralSpeed:18, spiralRadius:45, spiralStartRadius:4, spiralDepth:15, armColor:{r:0.02,g:0.02,b:0.03},armSize:1.2,  edgeColor:{r:2.0,g:1.8,b:1.4}, rotationSpeed:-0.10, bloom:3.5, shake:0.35 },
+  QUINCY:  { coreRatio:0.30, coreRadius:8,  coreColor:{r:0.3,g:0.6,b:3.0},  coreSize:2.0, ringRadius:20, ringThickness:2, armColor:{r:0.2,g:0.5,b:2.5}, armSize:1.0, crossSize:35, crossThickness:6, rotationSpeed:0.04, bloom:2.8, shake:0.2 },
+  HOLLOW:  { coreRatio:0.20, coreRadius:7,  coreColor:{r:2.5,g:0.4,b:0.0},  coreSize:2.5, arms:5,  spiralSpeed:20, spiralRadius:35, spiralStartRadius:2, spiralDepth:12, armColor:{r:1.2,g:0.3,b:0.0},  armSize:1.1,  rotationSpeed:-0.12, bloom:3.0, shake:0.5  },
+  GETSUGA: { speed:22, duration:90, bloom:5.0, shake:1.2 },
+  MUGETSU: { darkDuration:180, warpDuration:60, warpSpeed:14, bloom:4.0, shake:2.0, warpRange:250 },
+  FUSION:  { orbitSpeed:0.07, orbitStartRadius:18, spiralShrinkRate:0.975, spiralSpeedUp:1.025, collisionRadius:1.5, explosionDuration:50, explosionScatter:70, explosionBloom:7.0, explosionShake:2.0, orbitBloom:4.0, orbitShake:0.4 },
+  BLOOM:   { defaultStrength:1.6, radius:0.5, threshold:0.8 },
+  // FIX #4: Tightened snap threshold; now uses thumb tip (4) vs middle MCP (9) distance — truer "snap" gesture
+  DETECT:  { snapThreshold:0.045, snapCooldown:35, chargeFrames:25, mugetsuFrames:50, minDetect:0.7, minTrack:0.6 },
+  ANIM:    { lerpPos:0.45, lerpMorph:0.09, fadeIn:0.07, fadeOut:0.05, shakeMultiplier:14, neutralRot:0.004 },
+  CAM:     { w:1280, h:720, z:60, fov:70 },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+//  EVENT BUS
+// ═══════════════════════════════════════════════════════════════════════
+const Bus = {
+  _listeners: {},
+  on(ev, fn)  { (this._listeners[ev] = this._listeners[ev]||[]).push(fn); },
+  emit(ev, d) { (this._listeners[ev]||[]).forEach(fn => fn(d)); },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AUDIO ENGINE
+// ═══════════════════════════════════════════════════════════════════════
+let audioCtx, analyser, masterGain, audioBuffers = {};
+let audioReady = false;
+// FIX #14: Track active hum + any pending stop timeouts to avoid leaks
+let reiatsuHum = null;
+let humStopTimeout = null;
+
+async function initAudio() {
+  if (audioReady) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // FIX #8: Route everything through analyser → masterGain → destination
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 1.0;
+    analyser.connect(masterGain);
+    masterGain.connect(audioCtx.destination);
+    audioReady = true;
+    buildSounds();
+  } catch(e) { console.warn('Audio init failed:', e); }
+}
+
+function buildSounds() {
+  if (!audioCtx) return;
+  const makeBuffer = (dur, rate=44100) => audioCtx.createBuffer(1, Math.max(1, Math.floor(dur*rate)), rate);
+
+  function synthTone(freq, dur, type='sine', gain=0.4, attack=0.02, release=0.3) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    for (let i=0; i<data.length; i++) {
+      const t = i/sr;
+      let env = 1;
+      if (t < attack) env = t/attack;
+      else if (t > dur-release) env = Math.max(0, (dur-t)/release);
+      let sample = Math.sin(2*Math.PI*freq*t);
+      if (type==='sawtooth') sample = 2*(t*freq - Math.floor(t*freq+0.5));
+      if (type==='square')   sample = Math.sign(Math.sin(2*Math.PI*freq*t));
+      data[i] = sample * env * gain;
+    }
+    return buf;
+  }
+
+  function synthNoise(dur, gain=0.15, attack=0.01, release=0.2) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    for (let i=0; i<data.length; i++) {
+      const t = i/buf.sampleRate;
+      let env = 1;
+      if (t < attack) env = t/attack;
+      else if (t > dur-release) env = Math.max(0, (dur-t)/release);
+      data[i] = (Math.random()*2-1) * env * gain;
+    }
+    return buf;
+  }
+
+  function synthChime(freqs, dur, gain=0.3) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    for (let i=0; i<data.length; i++) {
+      const t = i/sr;
+      const env = Math.exp(-t * 3.5);
+      let sample = 0;
+      for (const f of freqs) sample += Math.sin(2*Math.PI*f*t);
+      data[i] = (sample/freqs.length) * env * gain;
+    }
+    return buf;
+  }
+
+  function synthImpact(dur=0.5, gain=0.5) {
+    const buf = makeBuffer(dur);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    for (let i=0; i<data.length; i++) {
+      const t = i/sr;
+      const env = Math.exp(-t*10);
+      const noise = (Math.random()*2-1)*0.6;
+      const sub = Math.sin(2*Math.PI*55*t) * Math.exp(-t*20);
+      data[i] = (noise + sub) * env * gain;
+    }
+    return buf;
+  }
+
+  audioBuffers = {
+    shikai:  synthChime([523, 659, 784, 1047], 2.0, 0.25),
+    bankai:  synthTone(110, 1.5, 'sawtooth', 0.3, 0.05, 0.8),
+    quincy:  synthChime([880, 1108, 1318, 1760], 1.8, 0.2),
+    hollow:  synthNoise(1.2, 0.25, 0.02, 0.5),
+    getsuga: synthImpact(0.8, 0.6),
+    fusion:  synthImpact(1.2, 0.7),
+    mugetsu: synthTone(60, 3.0, 'sawtooth', 0.35, 0.1, 1.5),
+  };
+}
+
+function playSound(name, vol=1.0) {
+  if (!audioReady || !audioBuffers[name]) return;
+  try {
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioBuffers[name];
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = vol;
+    src.connect(gainNode);
+    // FIX #8: Route through analyser so visualiser shows activity
+    gainNode.connect(analyser);
+    src.start(0);
+  } catch(e) {}
+}
+
+function startHum(freq, vol) {
+  if (!audioReady) return;
+  stopHum();
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.3);
+    osc.connect(gain);
+    // FIX #8: Route hum through analyser too
+    gain.connect(analyser);
+    osc.start();
+    reiatsuHum = { osc, gain };
+  } catch(e) {}
+}
+function stopHum() {
+  if (!reiatsuHum) return;
+  const h = reiatsuHum;
+  reiatsuHum = null;
+  // FIX #14: Clear any previously queued stop before scheduling a new one
+  if (humStopTimeout) { clearTimeout(humStopTimeout); humStopTimeout = null; }
+  try {
+    h.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+    h.gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+    humStopTimeout = setTimeout(() => {
+      try { h.osc.stop(); h.osc.disconnect(); h.gain.disconnect(); } catch(e){}
+      humStopTimeout = null;
+    }, 350);
+  } catch(e) {}
+}
+
+function getFreqData() {
+  if (!analyser) return new Uint8Array(128);
+  const d = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(d);
+  return d;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  THREE.JS SETUP
+// ═══════════════════════════════════════════════════════════════════════
+const threeCanvas = document.getElementById('three-canvas');
+threeCanvas.width = window.innerWidth; threeCanvas.height = window.innerHeight;
+
+const scene = new THREE.Scene();
+const cam3  = new THREE.PerspectiveCamera(CFG.CAM.fov, window.innerWidth/window.innerHeight, 0.1, 2000);
+cam3.position.z = CFG.CAM.z;
+
+const renderer = new THREE.WebGLRenderer({ canvas:threeCanvas, antialias:true, alpha:false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 1);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, cam3));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  CFG.BLOOM.defaultStrength, CFG.BLOOM.radius, CFG.BLOOM.threshold
+);
+composer.addPass(bloomPass);
+
+const ChromaShader = {
+  uniforms: { tDiffuse:{value:null}, strength:{value:0.0} },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float strength;
+    varying vec2 vUv;
+    void main(){
+      vec2 dir = vUv - 0.5;
+      float dist = length(dir);
+      vec2 offset = normalize(dir) * dist * strength * 0.015;
+      float r = texture2D(tDiffuse, vUv + offset).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv - offset).b;
+      gl_FragColor = vec4(r,g,b,1.0);
+    }`,
+};
+const chromaPass = new ShaderPass(ChromaShader);
+composer.addPass(chromaPass);
+
+const fxCanvas   = document.getElementById('fx-canvas');
+const fxCtx      = fxCanvas.getContext('2d');
+const inkCanvas  = document.getElementById('ink-canvas');
+const inkCtx     = inkCanvas.getContext('2d');
+const dbgCanvas  = document.getElementById('debug-canvas');
+const dbgCtx     = dbgCanvas.getContext('2d');
+const audioVisC  = document.getElementById('audio-vis-canvas');
+const audioVisCtx= audioVisC.getContext('2d');
+
+// FIX #15: Only resize canvases on resize event, not every frame
+function resizeCanvases() {
+  [fxCanvas, inkCanvas, dbgCanvas].forEach(c => { c.width=window.innerWidth; c.height=window.innerHeight; });
+  audioVisC.width = audioVisC.offsetWidth; audioVisC.height = audioVisC.offsetHeight;
+}
+resizeCanvases();
+
+function s2w(sx, sy) {
+  const fov = cam3.fov * Math.PI/180;
+  const halfH = cam3.position.z * Math.tan(fov/2);
+  const halfW = halfH * cam3.aspect;
+  return new THREE.Vector3(
+    ((sx/window.innerWidth)  - 0.5) * 2 * halfW,
+    -((sy/window.innerHeight) - 0.5) * 2 * halfH, 0
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  PARTICLE FACTORY
+// ═══════════════════════════════════════════════════════════════════════
+const N = CFG.N;
+
+function mkSys() {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(N*3);
+  const col = new Float32Array(N*3);
+  const siz = new Float32Array(N);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  geo.setAttribute('size',     new THREE.BufferAttribute(siz,1));
+  // NOTE #11: PointsMaterial ignores per-particle 'size' attribute — uniform size only.
+  // Kept as-is; upgrading to ShaderMaterial would be a larger refactor.
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    size:0.28, vertexColors:true,
+    blending:THREE.AdditiveBlending, transparent:true, depthWrite:false,
+  }));
+  pts.visible = false;
+  scene.add(pts);
+  return {
+    pts, geo, pos, col, siz,
+    tPos:new Float32Array(N*3), tCol:new Float32Array(N*3), tSiz:new Float32Array(N),
+    worldPos:new THREE.Vector3(), targetWorldPos:new THREE.Vector3(),
+    shape:'', visible:false, opacity:0,
+  };
+}
+
+const sysL = mkSys();
+const sysR = mkSys();
+const sysM = mkSys();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SHAPE GENERATORS
+// ═══════════════════════════════════════════════════════════════════════
+function genShikai(i) {
+  const C = CFG.SHIKAI;
+  if (i < N*C.coreRatio) {
+    const r=Math.random()*C.coreRadius, th=Math.random()*6.28, ph=Math.acos(2*Math.random()-1);
+    return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize};
+  }
+  const t=i/N, arm=i%C.arms, angle=t*C.spiralSpeed+arm*(Math.PI*2/C.arms), radius=C.spiralStartRadius+t*C.spiralRadius, fade=Math.random();
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(C.spiralDepth*t),r:C.armColor.r*fade,g:C.armColor.g*fade,b:C.armColor.b*fade,s:C.armSize};
+}
+
+function genBankai(i) {
+  const C = CFG.BANKAI;
+  if (i < N*C.coreRatio) {
+    const r=Math.random()*C.coreRadius, th=Math.random()*6.28, ph=Math.acos(2*Math.random()-1);
+    const ef=r/C.coreRadius;
+    return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:C.edgeColor.r*ef,g:C.edgeColor.g*ef,b:C.edgeColor.b*ef,s:C.coreSize};
+  }
+  const t=i/N, arm=i%C.arms, angle=-(t*C.spiralSpeed+arm*(Math.PI*2/C.arms)), radius=C.spiralStartRadius+t*C.spiralRadius, eg=Math.random()>0.85;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(C.spiralDepth*t),r:eg?C.edgeColor.r:C.armColor.r,g:eg?C.edgeColor.g:C.armColor.g,b:eg?C.edgeColor.b*1.2:C.armColor.b,s:C.armSize};
+}
+
+function genQuincy(i) {
+  const C = CFG.QUINCY; const t=i/N;
+  if (t<0.2) { const x=(Math.random()-0.5)*C.crossSize,y=(Math.random()-0.5)*C.crossThickness; return {x,y,z:(Math.random()-0.5)*2,r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize}; }
+  if (t<0.4) { const x=(Math.random()-0.5)*C.crossThickness,y=(Math.random()-0.5)*C.crossSize; return {x,y,z:(Math.random()-0.5)*2,r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize}; }
+  const angle=t*Math.PI*2, r=C.ringRadius+(Math.random()-0.5)*C.ringThickness, br=0.5+Math.random()*0.5;
+  return {x:r*Math.cos(angle),y:r*Math.sin(angle),z:(Math.random()-0.5)*4,r:C.armColor.r*br,g:C.armColor.g*br,b:C.armColor.b*br,s:C.armSize};
+}
+
+function genHollow(i) {
+  const C = CFG.HOLLOW;
+  if (i<N*C.coreRatio) { const r=Math.random()*C.coreRadius,th=Math.random()*6.28,ph=Math.acos(2*Math.random()-1); return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:C.coreColor.r,g:C.coreColor.g,b:C.coreColor.b,s:C.coreSize}; }
+  const t=i/N, arm=i%C.arms, angle=t*C.spiralSpeed+arm*(Math.PI*2/C.arms), radius=C.spiralStartRadius+t*C.spiralRadius, fl=0.6+Math.random()*0.6;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(C.spiralDepth*t),r:C.armColor.r*fl,g:C.armColor.g*fl,b:C.armColor.b,s:C.armSize};
+}
+
+function genGetsuga(i) {
+  const t=i/N, angle=-Math.PI*0.6+t*Math.PI*1.2, radius=14+(Math.random()-0.5)*8, eg=radius>19.5||radius<8.5;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*6,r:eg?2.0:0.03,g:eg?1.8:0.03,b:eg?1.2:0.05,s:eg?2.5:1.0};
+}
+
+// FIX #2: Warp range centralised in CFG; x spawns in [-warpRange, +warpRange]
+function genMugetsuWarp(i) {
+  const R = CFG.MUGETSU.warpRange;
+  const y=(Math.random()-0.5)*80, z=(Math.random()-0.5)*80, x=(Math.random()-0.5)*R*2, dk=Math.random()>0.3;
+  return {x,y,z,r:dk?0.01:1.2,g:dk?0.01:1.0,b:dk?0.02:0.7,s:0.3+Math.random()*2.5};
+}
+
+function genMugetsu(i) {
+  const t=i/N;
+  if (t<0.3) { const r=Math.random()*20,th=Math.random()*6.28,ph=Math.acos(2*Math.random()-1); return {x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph),r:0.01,g:0.01,b:0.02,s:1.0}; }
+  const arms=8, arm=i%arms, angle=t*25+arm*(Math.PI*2/arms), radius=5+t*80, eg=Math.random()>0.88;
+  return {x:radius*Math.cos(angle),y:radius*Math.sin(angle),z:(Math.random()-0.5)*(20*t),r:eg?1.5:0.01,g:eg?1.2:0.01,b:eg?0.9:0.02,s:eg?2.0:0.7};
+}
+
+function setShape(sys, fn) {
+  for (let i=0;i<N;i++) {
+    const p=fn(i);
+    sys.tPos[i*3]=p.x; sys.tPos[i*3+1]=p.y; sys.tPos[i*3+2]=p.z;
+    sys.tCol[i*3]=p.r; sys.tCol[i*3+1]=p.g; sys.tCol[i*3+2]=p.b;
+    sys.tSiz[i]=p.s;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  UI
+// ═══════════════════════════════════════════════════════════════════════
+const techJP   = document.getElementById('technique-jp');
+const techEN   = document.getElementById('technique-en');
+const zanEl    = document.getElementById('zanpakuto-name');
+const epBanner = document.getElementById('episode-banner');
+const epLine   = document.getElementById('ep-line-text');
+const epSub    = document.getElementById('ep-sub-text');
+const hollowOv = document.getElementById('hollow-overlay');
+const mugetsuOv= document.getElementById('mugetsu-overlay');
+const audioVisEl= document.getElementById('audio-vis');
+const vidEl    = document.getElementById('camera-video');
+const hudFPS   = document.getElementById('hud-fps');
+const hudTech  = document.getElementById('hud-tech');
+const hudHands = document.getElementById('hud-hands');
+const chargeFill= document.getElementById('charge-bar-fill');
+const chargeWrap= document.getElementById('charge-bar-wrap');
+const bars     = { reiatsu:document.getElementById('bar-reiatsu'), bankai:document.getElementById('bar-bankai'), hollow:document.getElementById('bar-hollow'), quincy:document.getElementById('bar-quincy') };
+
+const TECH_DATA = {
+  neutral: { jp:'待機中',   en:'STANDBY',               color:'#8a8478', bars:{reiatsu:0,   bankai:0,  hollow:0,   quincy:0  }, hum:0,   chromaStr:0,
