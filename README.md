@@ -7,7 +7,8 @@ Built using **Three.js**, **MediaPipe Hands**, and pure frontend technologies.
 ## 🚀 Live Demo
 https://realansil.github.io/Ichigo/<br>
 https://realansil.github.io/Ichigo/index2.html<br>
-https://realansil.github.io/Ichigo/index3.html
+https://realansil.github.io/Ichigo/index3.html<br>
+https://realansil.github.io/Ichigo/index4.html
 
 ---
 
